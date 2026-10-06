@@ -1,0 +1,371 @@
+---
+title: "Day 9: Statistical Learning — In-Class Activity"
+subtitle: "When does a better fit make a worse model?"
+author: "Econ 122"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r packages, include=FALSE, eval=TRUE}
+mypacks <- c("ggplot2","dplyr","tidyr","ISLR2")
+packs <- installed.packages()
+install.me <- mypacks[!(mypacks %in% packs[,"Package"])]
+if (length(install.me) >= 1) install.packages(install.me, repos = "http://cran.us.r-project.org")
+lapply(mypacks, library, character.only=TRUE)
+```
+
+## Introduction
+
+In class, a very flexible curve fit 20 cars almost perfectly and then did worse
+than a straight line on cars it hadn't seen. Now you'll see the same thing with
+real wage data, using `Wage` from ISLR2: 3,000 workers' ages and annual wages
+(in thousands of dollars).
+
+Imagine you only have a **small survey of 100 workers** to build a model with,
+and you want it to predict wages for the **other 2,900**. That's the normal
+situation in practice: you fit on the data you have, and the model gets used on
+people it has never seen.
+
+**Estimated time: 40 minutes.** The goal for today is **Parts 1–3 and the
+wrap-up**. There's a **Bonus** section at the end for anyone who finishes early.
+It's optional, so don't worry if you don't get to it.
+
+Each task ends with a question in *italics*. Write a sentence or two; those are
+what we'll discuss.
+
+```{r load}
+data(Wage)
+```
+
+---
+
+## Part 1: Training Error vs. Test Error (12 minutes)
+
+### Task 1.1: Split the data
+
+Run this chunk. It picks 100 random workers for training and keeps everyone else
+as a test set.
+
+**What's a seed?** R's "random" numbers come from a fixed recipe that starts at a
+number called the *seed*. `set.seed(313)` sets that starting number, so `sample()`
+picks the same 100 workers every time you run it, on any computer. Without it,
+you'd get a different split on each run. **Don't change the seed** — we want
+everyone's numbers to match.
+
+```{r task1_1}
+set.seed(313)
+train_rows <- sample(nrow(Wage), 100)
+wage_train <- Wage[train_rows, ]
+wage_test  <- Wage[-train_rows, ]
+
+nrow(wage_train)
+nrow(wage_test)
+```
+
+### Task 1.2: Write an MSE function
+
+The mean squared error is
+
+$$\text{MSE} = \frac{1}{n}\sum_{i=1}^{n} \big(y_i - \hat y_i\big)^2$$
+
+You'll write it as a **function**: a reusable piece of code that takes inputs
+and returns an output. Here's one that averages the gaps between two vectors:
+
+```{r function_example}
+average_gap <- function(x, y) {
+  gaps <- x - y     # one gap per element
+  mean(gaps)        # the last line is what the function returns
+}
+```
+
+The pieces:
+
+* `average_gap` is the name we give it. `<- function(...)` creates it.
+* `x` and `y` are the **arguments**, placeholders for whatever inputs you pass in.
+* The code between `{ }` is the **body**. It can have several lines; the value
+  of the last line is returned. `gaps` exists only inside the function.
+
+Running that chunk only *defines* the function. To use it, **call** it with
+inputs:
+
+```{r function_calls}
+average_gap(c(5, 7, 9), c(1, 2, 3))   # gaps are 4, 5, 6
+average_gap(c(10, 10), c(4, 8))       # gaps are 6, 2
+average_gap(y = c(1, 2, 3), x = c(5, 7, 9))   # name the arguments, any order
+```
+
+Notice that `x - y` works element by element: R subtracts the first values, then
+the second, and so on. You'll need exactly that for MSE.
+
+Now write `mse(actual, predicted)`. Then run the two checks below (remove the `#`
+first). They should return **0** and **1**.
+
+```{r task1_2}
+# Your code here
+
+
+# mse(c(1, 2, 3), c(1, 2, 3))   # should be 0
+# mse(c(1, 2, 3), c(2, 3, 4))   # should be 1
+```
+
+### Task 1.3: Score one model two ways
+
+Now let's put `mse()` to work on real data. To use it, we need to prepare its
+two inputs: the **actual** wages and a model's **predicted** wages for the same
+workers.
+
+**Actual wages** are already in the data sets you made in Task 1.1.
+
+**Predicted wages** need a model first. The first line of the chunk below fits
+a straight line through the training workers (a linear regression, which we'll
+cover on Day 10):
+
+* `lm()` stands for *linear model*.
+* `wage ~ age` means "predict `wage` from `age`".
+* `data = wage_train` fits it using only the 100 training workers.
+
+The fitted model is saved as `fit1`. Then `predict(fit1, newdata = wage_train)`
+gives its predicted wage for every row of `wage_train`.
+
+Your job: compute the MSE on the **training** data and on the **test** data.
+For the test MSE, use the same model `fit1`, but swap in `wage_test` in
+**both** places.
+
+Fill in the blanks (`___`), then remove the `#`s:
+
+```{r task1_3}
+fit1 <- lm(wage ~ age, data = wage_train)
+
+# train_mse_1 <- mse(___, predict(fit1, newdata = ___))
+# test_mse_1  <- mse(___, predict(fit1, newdata = ___))
+# train_mse_1
+# test_mse_1
+```
+
+*Which MSE is lower? Why would you expect that, before even running the code?*
+
+---
+
+## Part 2: Turn Up the Flexibility (10 minutes)
+
+Wages tend to rise with age and then level off, so a straight line is too
+simple. As in class, a polynomial of degree `d` — `lm(wage ~ poly(age, d))` — can
+bend more as `d` grows.
+
+### Task 2.1: Degrees 1 through 10
+
+This is Task 1.3 repeated for degrees 1 through 10, using a `for` loop:
+
+* First we make an empty table, `errors`, with one row per degree (`NA` means
+  "not filled in yet").
+* `for (d in 1:10) { ... }` runs the code inside `{ }` ten times: once with
+  `d = 1`, then `d = 2`, and so on.
+* Each time, it fits a degree-`d` model and stores its two MSEs in row `d` of the
+  table.
+
+Run it (it uses your `mse()` function, so Task 1.2 has to work first).
+
+```{r task2_1, error = TRUE}
+errors <- tibble(degree = 1:10, training = NA, test = NA)
+
+for (d in 1:10) {
+  fit <- lm(wage ~ poly(age, d), data = wage_train)
+  errors$training[d] <- mse(wage_train$wage, predict(fit, newdata = wage_train))
+  errors$test[d]     <- mse(wage_test$wage,  predict(fit, newdata = wage_test))
+}
+
+errors
+```
+
+### Task 2.2: Plot it
+
+Make a line plot with `degree` on the x-axis, MSE on the y-axis, and one line
+each for training and test.
+
+**Hint:** right now training and test MSE sit in two separate columns. To get
+one line per set, you need them in a single MSE column, plus a column that says
+whether each row is training or test. Use `pivot_longer()` first, then map that
+new column to color.
+
+```{r task2_2}
+# Your code here
+
+```
+
+*Does training MSE ever go up as the degree rises? Which degree has the lowest
+test MSE? Describe what's happening to the degree-10 model in one sentence,
+using the word "overfitting."*
+
+---
+
+## Part 3: Make Bias and Variance Yourself (13 minutes)
+
+Part 2 showed **that** test error turns back up. Part 3 shows **why**.
+
+Bias and variance are about what happens **across many possible training sets**.
+With real data we only get one. So we'll simulate a world where we know the true
+$f$ and can draw as many training sets as we like.
+
+### Task 3.1: The simulated world
+
+Run this chunk. The truth is $f(x) = \sin(2\pi x)$. Each call to
+`draw_training_set()` gives you a fresh set of `n` noisy observations from it.
+
+```{r task3_1}
+f_true <- function(x) sin(2 * pi * x)
+
+draw_training_set <- function(n = 20) {
+  x <- seq(0, 1, length.out = n)
+  tibble(x = x, y = f_true(x) + rnorm(n, mean = 0, sd = 0.4))
+}
+
+one_set <- draw_training_set()
+ggplot(one_set, aes(x, y)) +
+  geom_point() +
+  geom_function(fun = f_true, linetype = "dashed")
+```
+
+Run it two or three more times. There's no seed, so each run draws a new
+training set from the same world.
+
+### Task 3.2: Five hundred training sets
+
+Now imagine fitting a degree-1 and a degree-10 polynomial to a training set and
+predicting at `x = 0.25`, where the truth is `f_true(0.25)` = 1. The code below
+does that for 500 different training sets per model and stores every prediction.
+Run it.
+
+```{r task3_2}
+predict_at_quarter <- function(degree, n = 20) {
+  train <- draw_training_set(n)
+  fit <- lm(y ~ poly(x, degree), data = train)
+  predict(fit, newdata = tibble(x = 0.25))
+}
+
+set.seed(122)
+darts <- tibble(
+  degree = rep(c(1, 10), each = 500),
+  pred   = c(replicate(500, predict_at_quarter(1)),
+             replicate(500, predict_at_quarter(10)))
+)
+```
+
+*Optional, if you're curious how that code works:*
+
+* `predict_at_quarter(degree)` does one round: draw a fresh training set, fit
+  the model, and return its prediction at `x = 0.25`.
+* `replicate(500, predict_at_quarter(1))` runs that line 500 times and collects
+  the 500 results into a vector. Each run draws a new training set, so each
+  prediction is different. For example, `replicate(3, rnorm(1))` gives three
+  different random numbers.
+* `rep(c(1, 10), each = 500)` repeats each value 500 times: five hundred `1`s,
+  then five hundred `10`s. That labels each prediction with the degree that
+  made it. For example, `rep(c("a", "b"), each = 2)` gives `"a" "a" "b" "b"`.
+* `c(...)` stacks the two sets of 500 predictions into one column of 1,000, in
+  the same order as the labels.
+
+Now compute, for each degree:
+
+* `bias` = the mean prediction minus the truth, `f_true(0.25)`
+* `variance` = the variance of the predictions, `var(pred)`
+
+Then plot a histogram of `pred` for each degree (`facet_wrap(~ degree)`), with a
+vertical line at the truth (`geom_vline(xintercept = 1)`).
+
+Fill in the blanks (`___`) and remove the `#`s, then add the histogram:
+
+```{r task3_2_yours}
+# bv_20 <- darts %>%
+#   group_by(degree) %>%
+#   summarise(bias     = ___,
+#             variance = ___)
+# bv_20
+
+# Your histogram code here
+
+```
+
+**How to read it:** each histogram is the 500 predictions one model made. If
+its center sits away from the vertical line at the truth, the model is wrong on
+average:
+that's **bias**. If it is spread out, the model's answer depends a lot on which
+training set it got: that's **variance**.
+
+*Which model has high bias (consistently off in the same direction)? Which has
+high variance (jumps around from one training set to the next)? Point to where
+you see each one in the histograms.*
+
+### Task 3.3: More data, again
+
+Repeat Task 3.2 with training sets of `n = 200` instead of 20. Fill in both
+blanks, remove the `#`s, then compute bias and variance the same way as in
+Task 3.2.
+
+```{r task3_3}
+set.seed(122)
+# darts_200 <- tibble(
+#   degree = rep(c(1, 10), each = 500),
+#   pred   = c(replicate(500, predict_at_quarter(1,  n = ___)),
+#              replicate(500, predict_at_quarter(10, n = ___)))
+# )
+
+# Bias and variance: your code here
+
+```
+
+*Which of the two numbers — bias or variance — did more data shrink? Which one
+barely moved?*
+
+---
+
+## Wrap-up & Discussion (5 minutes)
+
+1. A classmate says: *"The degree-10 model had the lowest training MSE, so it's
+   the least biased model and the best one."* What's right and what's wrong
+   about that?
+
+2. Your boss hands you data on **200** customers and asks for the most accurate
+   possible spending prediction. A colleague suggests the most flexible method
+   available. Using today's results, what would you tell them — and what would
+   you want to check before trusting any model?
+
+---
+
+## Bonus (optional)
+
+Only if you've finished everything above. These are extra practice, not part
+of today's goal.
+
+### Bonus 1: More wage data
+
+Back to the `Wage` data: what if the training set had **1,500 workers** instead
+of 100? This is the code from Tasks 1.1 and 2.1 with new names, so your
+100-worker results stay put. Fill in the blank and remove the `#`s.
+
+```{r bonus1}
+set.seed(313)
+# train_rows_big <- sample(nrow(Wage), ___)
+# wage_train_big <- Wage[train_rows_big, ]
+# wage_test_big  <- Wage[-train_rows_big, ]
+#
+# errors_big <- tibble(degree = 1:10, training = NA, test = NA)
+# for (d in 1:10) {
+#   fit <- lm(wage ~ poly(age, d), data = wage_train_big)
+#   errors_big$training[d] <- mse(wage_train_big$wage, predict(fit, newdata = wage_train_big))
+#   errors_big$test[d]     <- mse(wage_test_big$wage,  predict(fit, newdata = wage_test_big))
+# }
+#
+# errors       # 100 training workers
+# errors_big   # 1,500 training workers
+```
+
+*How much worse is the degree-10 model than the best model now, compared to
+Part 2? Which did more data shrink here, bias or variance? (Task 3.3 is a hint.)*
+
+### Bonus 2: One split, one answer?
+
+*In Part 2, your "best degree" came from **one** random split of the data. Why
+might a different seed give a different answer?* (We'll fix this on Day 14.)
