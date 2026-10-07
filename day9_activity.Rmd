@@ -100,8 +100,8 @@ average_gap(y = c(1, 2, 3), x = c(5, 7, 9))   # name the arguments, any order
 Notice that `x - y` works element by element: R subtracts the first values, then
 the second, and so on. You'll need exactly that for MSE.
 
-Now write `mse(actual, predicted)`. Then run the two checks below (remove the `#`
-first). They should return **0** and **1**.
+Now write `mse(actual, predicted)`. Then run the three checks below (remove the
+`#` first). They should return **0**, **1**, and **0.6667**.
 
 ```{r task1_2}
 # Your code here
@@ -109,6 +109,7 @@ first). They should return **0** and **1**.
 
 # mse(c(1, 2, 3), c(1, 2, 3))   # should be 0
 # mse(c(1, 2, 3), c(2, 3, 4))   # should be 1
+# mse(c(1, 2, 3), c(2, 2, 2))   # should be 0.6667 -- if you get 0, you squared after averaging
 ```
 
 ### Task 1.3: Score one model two ways
